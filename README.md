@@ -6,6 +6,12 @@ This script allows to search for those files, and reinstall the packages they be
 
 Mostly it is used to update ROS packages in an Arch Linux system, since they rely heavily on boost which is constantly updated.
 
+# Dependencies
+
+The script relies on the following python packages:
+
+* python-networkx
+
 # Example
 
 As an example, suppose we have a ROS installation under /opt/ros/kinetic and the system boost libraries have since the last (re-)installation been updated from 1.63 to 1.64.
