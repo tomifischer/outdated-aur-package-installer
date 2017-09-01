@@ -1,0 +1,1 @@
+# outdated-aur-package-installer
