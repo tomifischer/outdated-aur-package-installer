@@ -11,8 +11,8 @@ Mostly it is used to update ROS packages in an Arch Linux system, since they rel
 As an example, suppose we have a ROS installation under /opt/ros/kinetic and the system boost libraries have since the last (re-)installation been updated from 1.63 to 1.64.
 Many ROS libraries will be linked to boost 1.63 and need to be recompiled. Knowing this, we can execute the script
 
-  ./search-and-install.py -i /opt/ros/kinetic boost 1.63
+  `./search-and-install.py -i /opt/ros/kinetic boost 1.63`
 
 which will reinstall every ROS package with outdated files.
 
-Ignoring th installation flag (-i) will only print the outdated packages to the screen.
+Ignoring the installation flag (-i) will only print the outdated packages to the screen.
