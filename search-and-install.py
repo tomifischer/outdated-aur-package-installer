@@ -57,10 +57,11 @@ def queryFileOwner(filename):
 
 def installPackage(package_name):
 
-  p = subprocess.Popen(["yaourt", "--noconfirm", "-S", package_name], stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+  p = subprocess.Popen(["yaourt", "--noconfirm", "-S", package_name], stderr=subprocess.PIPE)
   data = p.communicate()
 
-  stdout = data[0].decode()
+  # communicate() returns a tuple (stdout_data, stderr_data).
+  #stdout = data[0].decode()
   stderr = data[1].rstrip(b'\n').decode()
 
   if p.returncode != 0:
