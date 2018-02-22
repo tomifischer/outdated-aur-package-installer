@@ -101,7 +101,7 @@ def getInverseBFS(graph):
   if 0== nx.number_of_nodes( graph ):
     return []
 
-  leafs = [x for x in graph.nodes_iter() if graph.out_degree(x)==0]
+  leafs = [x for x in graph.nodes() if graph.out_degree(x)==0]
 
   graph.remove_nodes_from( leafs )
 
