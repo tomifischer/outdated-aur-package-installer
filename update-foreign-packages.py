@@ -23,202 +23,62 @@
 import os
 import sys
 import subprocess
-import networkx as nx
+from builtins import input
 
-# The package manager to use. It should be able to manage the
-# Arch User Repository (AUR) and be compliant with the pacman interface.
-PACKAGE_MANAGER = "yay"
+import object_deps
+import package_depsort
+import package_manager_api
 
-def sanitize_list_string(text, sep='\n'):
-  """
-  Convert a string representing a list of words into a clean list of words.
-  """
+def query_yes_no(question, default=None):
+    """Ask a yes/no question via raw_input() and return their answer.
+    
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
 
-  # split the text into words
-  ls = text.split(sep=sep)
+    The "answer" return value is one of "yes" or "no".
 
-  # strip leading and trailing whitespace from words
-  ls = map(str.strip, ls)
+    src: http://code.activestate.com/recipes/577058/
+    """
 
-  # remove empty elements from the list
-  ls = list(filter(None, ls))
+    if default == None:
+      prompt = " [y/n] "
+    elif default == True:
+      prompt = " [Y/n] "
+    elif default == False:
+      prompt = " [y/N] "
+    else:
+      raise ValueError("invalid default answer: '%s'" % default)
 
-  return ls
+    valid_true = ["y", "ye", "yes"]
+    valid_false = ["n", "no"]
 
-def pacman(flags, pkgs=[], eflgs=[]):
-  """
-  Subprocess wrapper for the package manager.
-  src: https://github.com/peakwinter/python-pacman
-  """
+    while 1:
 
-  # prepare command arguments
+      choice = input(question + prompt).lower()
 
-  if not pkgs:
-    cmd = [PACKAGE_MANAGER, "--noconfirm", flags]
-  elif type(pkgs) == list:
-    cmd = [PACKAGE_MANAGER, "--noconfirm", flags]
-    cmd += [quote(s) for s in pkgs]
-  else:
-    cmd = [PACKAGE_MANAGER, "--noconfirm", flags, pkgs]
-  if eflgs and any(eflgs):
-    eflgs = [x for x in eflgs if x]
-    cmd += eflgs
+      if default is not None and choice == '':
+        return default
 
-  # call command
+      elif choice in valid_true:
+        return True
 
-  p = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+      elif choice in valid_false:
+        return False
 
-  # retrieve return values
-
-  ret = p.communicate()
-
-  return {"code": p.returncode, "stdout": ret[0].decode(), "stderr": ret[1].rstrip(b'\n').decode()}
-
-def is_found(package):
-  """
-  Returns True if the package is found in the package managers remote db.
-  """
-  return pacman("-Q", package)["code"] == 0
-
-def get_foreign_packages():
-  """
-  Get the list of foreign packages installed on the package manager database.
-  """
-
-  # -Q, --query    query package manager database
-  # -q, --quiet    show less information for query and search
-  # -m, --foreign  list installed packages not found in sync db(s)
-  ret = pacman('-Qqm')
-
-  if ret["code"] != 0:
-    raise Exception("Failed to query packages: {0}".format( ret["stderr"] ))
-
-  return sanitize_list_string( ret["stdout"] )
-
-def get_installed_files(package):
-  """
-  Get the list the files owned by the queried package.
-  """
-
-  # -Q, --query    query package manager database
-  # -q, --quiet    show less information for query and search
-  # -l, --list     list the files owned by the queried package
-  ret = pacman('-Qql', package)
-
-  if ret["code"] != 0:
-    raise Exception("Failed to query package: {0}".format( ret["stderr"] ))
-
-  return list(filter(os.path.isfile, sanitize_list_string( ret["stdout"] )))
-
-def get_package_info(package):
-
-  # -Q, --query    query package manager database
-  # -q, --quiet    show less information for query and search
-  # -l, --list     list the files owned by the queried package
-  ret = pacman('-Qi', package)
-
-  if ret["code"] != 0:
-    raise Exception("Failed to query package: {0}".format( ret["stderr"] ))
-
-  pkg_info = {}
-  for line in ret["stdout"].strip().split('\n'):
-    words = line.split(':')    
-    pkg_info[ words[0].strip() ] = ':'.join( words[1:] ).strip()
-
-  return pkg_info
-
-def get_package_dependencies(package):
-
-  pkg_info = get_package_info( package )
-
-  return sanitize_list_string(pkg_info["Depends On"], sep=None)
-
-def ldd_object_exists(binary_filename, ldd_line):
-
-  # this should be the absolute path to the object
-  path = ldd_line.split()[-2]
-
-  # some kernel specific objects don't show the absolute path
-  if path.startswith("linux-vdso.so") or path.startswith("linux-gate.so"):
-    return True
-
-  # some executables apparently set their own LD_LIBRARY_PATH for their own
-  # shared objects on startup, which are referenced relatively.
-  if not path.startswith('/'):
-    return True
-
-  return os.path.exists( path )
-
-def get_unexisting_linked_libraries(binary_filename):
-
-  p = subprocess.Popen(["ldd", binary_filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-  ret = p.communicate()
-
-  # ldd may fail if the file is a directory or if the script
-  # does not have execution permission.
-  if p.returncode != 0:
-    #print("{0}".format( ret[1].rstrip(b'\n').decode() ))
-    #raise Exception("Failed to query shared objects: {0}".format( ret[1].rstrip(b'\n').decode() ))
-    return []
-
-  # get the list of linked objects
-  ls = sanitize_list_string( ret[0].decode() )
-
-  # filter out objects that do not exist
-  ls = list(filter(lambda dep: not ldd_object_exists(binary_filename, dep), ls))
-
-  return ls
-
-def inverse_bfs(graph):
-
-  if 0== nx.number_of_nodes( graph ):
-    return []
-
-  leafs = [x for x in graph.nodes() if graph.out_degree(x)==0]
-
-  graph.remove_nodes_from( leafs )
-
-  return leafs + inverse_bfs( graph )
-
-def get_packages_inorder(packages):
-  """
-  Given a list of packages, return the sorted list where a packages
-  dependencies are listed before it.
-  """
-
-  pkg_graph = nx.DiGraph()
-
-  for package in packages:
-
-    pkg_info = get_package_info( package )
-
-    dependencies = get_package_dependencies( package )
-
-    # (tfischer) I don't remember why I didn't update the pkg_graph directly
-    # when I wrote this, but I think there was a reason.
-    # maybe because of duplicates?
-    aux_graph = nx.DiGraph()
-    aux_graph.add_node( package )
-    for dependency in dependencies:
-      if dependency in packages:
-        aux_graph.add_node( dependency )
-        aux_graph.add_edge( package, dependency )
-
-    pkg_graph = nx.compose(pkg_graph, aux_graph)
-
-  assert( len(list(nx.simple_cycles(pkg_graph))) == 0 )
-
-  return inverse_bfs( pkg_graph )
+      else:
+        sys.stdout.write("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
 
 def has_unresolved_dependencies(package, verbose=False):
 
   is_outdated = False
 
-  installed_files = get_installed_files( package )
+  installed_files = package_manager_api.get_installed_files( package )
   #print( installed_files )
 
   for filename in installed_files:
-    unexisting_linked_libraries = get_unexisting_linked_libraries( filename )
+    unexisting_linked_libraries = object_deps.get_unexisting_linked_libraries( filename )
     is_outdated = is_outdated or (0 < len(unexisting_linked_libraries))
 
     # Only keep iterating if asked for verbose output, since in that case
@@ -239,39 +99,64 @@ def main(args):
   import argparse
 
   parser = argparse.ArgumentParser()
+  parser.add_argument("-p", "--package", help="Single package check.")
+  parser.add_argument("-i", "--ignore", help="Ignore packages.", nargs='+')
   parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose output.")
-  parser.add_argument("-d", "--dry-run", action="store_true", help="Only list outdated packages without installing.")
+  parser.add_argument("-d", "--dryrun", action="store_true", help="Only list outdated packages without installing.")
   args = parser.parse_args()
 
   ######
   ##  ##
   ######
 
-  foreign_packages = get_foreign_packages()
-  #print( foreign_packages )
+  if args.package:
 
-  # update the "simpler" packages first, since packages that depend on
-  # it may have unresolved links caused by the dependencies unresolved links.
-  foreign_packages = get_packages_inorder( foreign_packages )
-  #print( foreign_packages )
+    foreign_packages = [ args.package ]
+
+  else:
+
+    foreign_packages = package_manager_api.get_foreign_packages()
+
+    package_dependencies = []
+    for package in foreign_packages:
+      package_dependencies.append( package_manager_api.get_package_dependencies( package ) )
+
+    # update the "simpler" packages first, since packages that depend on
+    # it may have unresolved links caused by the dependencies unresolved links.
+    foreign_packages = package_depsort.get_packages_inorder(foreign_packages, package_dependencies)
 
   i_package = 1
   n_packages = len(foreign_packages)
 
   for package in foreign_packages:
 
+    if args.ignore and package in args.ignore:
+      continue
+
     print("Checking package " + str(i_package) + "/" + str(n_packages) + " " + package)
 
-    if not is_found( package ):
+    if not package_manager_api.is_found( package ):
       print("WARNING, package " + package + " was not found.", file=sys.stderr)
       continue
 
     if has_unresolved_dependencies(package, args.verbose):
+
       print("package " + package + " needs to be reinstalled.")
-      # TODO update package
+
+      if args.dryrun:
+        continue
+
+      # package installation may fail. Wait for user input to continue.
+      try:
+        package_manager_api.install_package( package )
+
+      except Exception as e:
+        print( e )
+
+        if not query_yes_no("continue?", True):
+          return
 
     i_package += 1
 
 if __name__ == '__main__':
-  import sys
   sys.exit( main( sys.argv ) )

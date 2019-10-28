@@ -67,7 +67,7 @@ def installPackage(package_name):
   if p.returncode != 0:
       raise Exception("Failed to install package. {0}".format(stderr))
 
-def dependsOn(library_filename, dependency_name, version):
+def dependsOn(library_filename, dependency_name, version=None):
 
   p = subprocess.Popen(["ldd", library_filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -77,7 +77,8 @@ def dependsOn(library_filename, dependency_name, version):
 
     aux = line.decode().split()
 
-    if (dependency_name in aux[0]) and (version in aux[0]):
+    if (dependency_name in aux[0]) and ((version is None) or (version in aux[0])):
+      print(library_filename, aux)
       return True
 
   return False
@@ -87,12 +88,14 @@ def loadPackagesFromFile( filename ):
     words = f.read().split()
     return set(words)
 
-def searchForPackages(root_dir, dependency_name, dependency_version):
+def searchForPackages(root_dir, dependency_name, dependency_version, verbose=False):
   ret = set()
   for root, _, filenames in os.walk( root_dir ):
     for filename in filenames:
       filepath = os.path.join(root, filename)
       if ( dependsOn(filepath, dependency_name, dependency_version) ):
+        if verbose:
+          print( filepath )
         ret.add( queryFileOwner(filepath) )
   return ret
 
@@ -119,8 +122,9 @@ def main(args):
 
   parser.add_argument("root_dir", help="root dir to scan for outdated files")
   parser.add_argument("dependency_name", help="dependency name to scan for. Example: boost")
-  parser.add_argument("dependency_version", help="dependency version to scan for. Example: 1.63")
+  parser.add_argument("--version", dest="dependency_version", help="dependency version to scan for. Example: 1.63")
   parser.add_argument("-i", "--install", action="store_true", help="install outdated packages")
+  parser.add_argument("-v", "--verbose", action="store_true", help="verbose output")
 
   args = parser.parse_args()
 
@@ -129,7 +133,7 @@ def main(args):
   #######################################################
 
   print("searching for outdated files...")
-  packages = searchForPackages(args.root_dir, args.dependency_name, args.dependency_version)
+  packages = searchForPackages(args.root_dir, args.dependency_name, args.dependency_version, args.verbose)
 
   print("computing dependency graph...")
   pkg_graph = nx.DiGraph()
